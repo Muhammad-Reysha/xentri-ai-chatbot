@@ -10,6 +10,9 @@ const fullText = `Halo Telyutizen! Butuh informasi apa? Aku siap membantu lohh!`
 export default function Home() {
   const [typedText, setTypedText] = useState("");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [aiResponse, setAiResponse] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -23,6 +26,59 @@ export default function Home() {
   const removeImage = () => {
     setSelectedImage(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleSend = async () => {
+    const trimmed = message.trim();
+    if (!trimmed || isLoading) return;
+
+    setIsLoading(true);
+    setAiResponse("");
+    setMessage("");
+    removeImage();
+
+    try {
+      const response = await fetch("http://localhost:8000/api/chat/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: trimmed,
+          model:'model2',
+        }),
+      });
+
+      if (!response.ok) throw new Error(`Server error: ${response.status}`);
+      if (!response.body) throw new Error("No response body");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const text = line.slice(6); // hapus prefix "data: "
+            setAiResponse((prev) => prev + text);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Failed to send:", error);
+      setAiResponse("Terjadi kesalahan, coba lagi.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") handleSend();
   };
 
   useEffect(() => {
@@ -39,7 +95,7 @@ export default function Home() {
   return (
     <main className="h-screen w-full md:pl-20 bg-[#07122C] text-white relative overflow-hidden flex flex-col">
       
-      {/* 1. AREA ATAS (DIKUNCI MATI DI TENGAH) */}
+      {/* 1. AREA ATAS */}
       <div className="flex-1 overflow-hidden w-full pl-6 md:pl-16 lg:pl-24 pr-6 flex flex-col justify-center z-10">
         <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] items-center gap-10 lg:gap-20 max-w-[1100px] mb-8">
           
@@ -58,9 +114,12 @@ export default function Home() {
                 animate={{ opacity: 1, y: 0 }}
                 className="inline-block bg-gradient-to-br from-[#0a193a] to-[#071125] border border-[#1e3a68] shadow-[0_4px_20px_rgba(42,160,182,0.15)] px-5 py-4 rounded-2xl rounded-tl-sm max-w-[100%] sm:max-w-[95%] break-words"
               >
-                <p className="text-gray-100 text-[14px] sm:text-[15px] leading-relaxed flex items-center">
-                  {typedText}
-                  <span className="inline-block w-1.5 h-4 ml-1 bg-[#2AA0B6] animate-pulse"></span>
+                <p className="text-gray-100 text-[14px] sm:text-[15px] leading-relaxed flex items-center flex-wrap">
+                  {/* Tampilkan AI response kalau ada, fallback ke typing animation */}
+                  {aiResponse || typedText}
+                  {(isLoading || (!aiResponse && typedText.length < fullText.length)) && (
+                    <span className="inline-block w-1.5 h-4 ml-1 bg-[#2AA0B6] animate-pulse shrink-0"></span>
+                  )}
                 </p>
               </motion.div>
             </div>
@@ -82,19 +141,14 @@ export default function Home() {
       {/* 2. AREA BAWAH (INPUT) */}
       <div className="w-full pl-6 md:pl-16 lg:pl-24 pr-6 pb-8 pt-4 shrink-0 z-20 flex justify-start">
         
-        {/* KUNCI 1: Tambahin class 'relative' di bungkus ini biar foto tau induknya di mana */}
         <div className="w-full max-w-[900px] flex flex-col relative">
 
           <AnimatePresence>
             {selectedImage && (
               <motion.div 
-                // KUNCI 2: Posisi awal dari bawah (y: 20) biar animasinya naik
                 initial={{ opacity: 0, y: 20, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 10, scale: 0.95, transition: { duration: 0.2 } }}
-                
-                // KUNCI 3: Pake absolute, bottom-full (biar posisinya di atas input bar), dan mb-4 (jarak)
-                // KUNCI 4: bg-white/5 dan backdrop-blur-md buat efek transparan/nembus
                 className="absolute bottom-full mb-4 left-0 bg-[#0a193a]/60 backdrop-blur-md border border-[#1e3a68] p-2 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.5)] z-50"
               >
                 <div className="relative w-20 h-20 sm:w-28 sm:h-28 rounded-lg overflow-hidden">
@@ -129,15 +183,25 @@ export default function Home() {
             <input
               type="text"
               placeholder="Butuh informasi apa?"
-              className="flex-1 bg-transparent border-none outline-none text-gray-100 placeholder-gray-400 text-sm sm:text-[15px] px-3"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={isLoading}
+              className="flex-1 bg-transparent border-none outline-none text-gray-100 placeholder-gray-400 text-sm sm:text-[15px] px-3 disabled:opacity-50"
             />
             <motion.button
+              onClick={handleSend}
+              disabled={isLoading || !message.trim()}
               initial={{ scale: 0.85 }}
               whileHover={{ scale: 1.05, backgroundColor: "#2AA0B6" }}
               whileTap={{ scale: 0.95 }}
-              className="ml-2 bg-[#1e3a68] text-white p-3 rounded-full flex items-center justify-center transition-colors shadow-lg"
+              className="ml-2 bg-[#1e3a68] text-white p-3 rounded-full flex items-center justify-center transition-colors shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <FaPaperPlane size={16} />
+              {isLoading ? (
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <FaPaperPlane size={16} />
+              )}
             </motion.button>
           </div>
 

@@ -19,7 +19,6 @@ export default function Sidebar() {
 
   const menuItems = [
     { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
-    { name: "Users", href: "/admin/users", icon: Users },
     { name: "Upload Files", href: "/admin/upload", icon: Upload },
     { name: "Settings", href: "/admin/settings", icon: Settings },
   ];
